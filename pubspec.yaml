@@ -4,21 +4,21 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.8.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0" # More flexible range
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  http: ^1.2.1
-  intl: ^0.19.0
-  geolocator: ^14.0.0
-  shared_preferences: ^2.4.0
+  cupertino_icons: ^1.0.8       # latest
+  http: ^1.2.2                  # upgraded from 1.2.1
+  intl: ^0.20.2                  # upgraded from 0.19.0
+  geolocator: ^14.0.2            # upgraded from 14.0.0
+  shared_preferences: ^2.5.3     # upgraded from 2.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0          # latest
 
 flutter:
   uses-material-design: true
