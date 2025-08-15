@@ -1,6 +1,5 @@
-
 import 'dart:convert';
-import 'dart:ui' show FontWeight, ImageFilter;
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
@@ -54,6 +53,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
       if (isFavorite) {
         favorites.remove(cityName);
       } else {
+        // Avoid duplicate favorites
         if (!favorites.contains(cityName)) {
           favorites.add(cityName);
         }
@@ -63,10 +63,32 @@ class _WeatherScreenState extends State<WeatherScreen> {
     });
   }
 
+  // Helper to get precipitation value
+  double _getPrecipitation(Map<String, dynamic> current) {
+    double precip = 0.0;
+    
+    if (current.containsKey('rain')) {
+      final rain = current['rain'];
+      if (rain is Map) {
+        precip += rain['1h'] ?? rain['3h'] ?? 0.0;
+      }
+    }
+    
+    if (current.containsKey('snow')) {
+      final snow = current['snow'];
+      if (snow is Map) {
+        precip += snow['1h'] ?? snow['3h'] ?? 0.0;
+      }
+    }
+    
+    return precip;
+  }
+
   Future<Map<String, dynamic>> getWeather() async {
     try {
       Uri currentUri;
       Uri forecastUri;
+      
       if (lat != null && lon != null) {
         currentUri = Uri.parse(
             'https://api.openweathermap.org/data/2.5/weather?lat=$lat&lon=$lon&appid=$openweatherApi&units=$units');
@@ -79,22 +101,25 @@ class _WeatherScreenState extends State<WeatherScreen> {
             'https://api.openweathermap.org/data/2.5/forecast?q=$cityName&appid=$openweatherApi&units=$units');
       }
 
-      final currentRes = await http.get(currentUri);
-      final forecastRes = await http.get(forecastUri);
+      final [currentRes, forecastRes] = await Future.wait([
+        http.get(currentUri),
+        http.get(forecastUri)
+      ]);
 
       final currentData = jsonDecode(currentRes.body);
       final forecastData = jsonDecode(forecastRes.body);
 
-      if (int.tryParse(currentData['cod'].toString()) != 200) {
-        throw currentData['message'] ?? 'An unexpected error occurred';
+      // Handle API error responses
+      if (currentData['cod'] != 200) {
+        throw currentData['message'] ?? 'Error: ${currentData['cod']}';
       }
       if (forecastData['cod'] != '200') {
-        throw 'An unexpected error occurred with forecast';
+        throw 'Forecast error: ${forecastData['message']}';
       }
 
       return {'current': currentData, 'forecast': forecastData};
     } catch (e) {
-      throw e.toString();
+      throw 'Failed to load weather: ${e.toString()}';
     }
   }
 
@@ -103,19 +128,17 @@ class _WeatherScreenState extends State<WeatherScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        if (scaffoldMessenger.mounted) {
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: const Text('Location services are disabled. Please enable them.'),
-              action: SnackBarAction(
-                label: 'Settings',
-                onPressed: () async {
-                  await Geolocator.openLocationSettings();
-                },
-              ),
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: const Text('Location services are disabled. Please enable them.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () async {
+                await Geolocator.openLocationSettings();
+              },
             ),
-          );
-        }
+          ),
+        );
         throw 'Location services are disabled.';
       }
 
@@ -123,34 +146,32 @@ class _WeatherScreenState extends State<WeatherScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          if (scaffoldMessenger.mounted) {
-            scaffoldMessenger.showSnackBar(
-              const SnackBar(content: Text('Location permissions are denied.')),
-            );
-          }
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied.')),
+          );
           throw 'Location permissions are denied.';
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        if (scaffoldMessenger.mounted) {
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: const Text('Location permissions are permanently denied. Please enable them in settings.'),
-              action: SnackBarAction(
-                label: 'Settings',
-                onPressed: () async {
-                  await Geolocator.openAppSettings();
-                },
-              ),
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: const Text('Location permissions are permanently denied. Please enable them in settings.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () async {
+                await Geolocator.openAppSettings();
+              },
             ),
-          );
-        }
+          ),
+        );
         throw 'Location permissions are permanently denied.';
       }
 
-      // ignore: deprecated_member_use
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      
       if (!mounted) return;
       setState(() {
         lat = position.latitude;
@@ -159,17 +180,15 @@ class _WeatherScreenState extends State<WeatherScreen> {
         weather = getWeather();
       });
     } catch (e) {
-      if (scaffoldMessenger.mounted) {
-        scaffoldMessenger.showSnackBar(SnackBar(content: Text(e.toString())));
-      }
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
   void showSearchDialog() {
+    final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) {
-        final controller = TextEditingController();
         return AlertDialog(
           title: const Text('Search City'),
           content: TextField(
@@ -179,6 +198,17 @@ class _WeatherScreenState extends State<WeatherScreen> {
               border: OutlineInputBorder(),
             ),
             autofocus: true,
+            onSubmitted: (value) {
+              if (value.isNotEmpty) {
+                setState(() {
+                  cityName = value.trim();
+                  lat = null;
+                  lon = null;
+                  weather = getWeather();
+                });
+                Navigator.pop(ctx);
+              }
+            },
           ),
           actions: [
             TextButton(
@@ -194,8 +224,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     lon = null;
                     weather = getWeather();
                   });
+                  Navigator.pop(ctx);
                 }
-                Navigator.pop(ctx);
               },
               child: const Text('Search'),
             ),
@@ -215,7 +245,10 @@ class _WeatherScreenState extends State<WeatherScreen> {
           if (cityName.isNotEmpty)
             IconButton(
               onPressed: _toggleFavorite,
-              icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border),
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: isFavorite ? Colors.red : null,
+              ),
               tooltip: 'Favorite',
             ),
           IconButton(
@@ -268,6 +301,11 @@ class _WeatherScreenState extends State<WeatherScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 24),
               ),
             ),
+            if (favorites.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('No favorites yet'),
+              ),
             ...favorites.map(
               (fav) => ListTile(
                 title: Text(fav),
@@ -278,7 +316,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     setState(() {
                       favorites.remove(fav);
                       prefs.setStringList('favorites', favorites);
-                      if (cityName == fav) isFavorite = false;
+                      if (cityName == fav) {
+                        isFavorite = false;
+                      }
                     });
                   },
                 ),
@@ -303,8 +343,18 @@ class _WeatherScreenState extends State<WeatherScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+          
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Text(
+                  'Error: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.red, fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
 
           final data = snapshot.data!;
@@ -325,17 +375,26 @@ class _WeatherScreenState extends State<WeatherScreen> {
           final currentVisibility = units == 'metric'
               ? (current['visibility'] / 1000).toStringAsFixed(1)
               : (current['visibility'] / 1609).toStringAsFixed(1);
-          double precip = 0;
-          if (current.containsKey('rain')) precip += current['rain']['1h'] ?? 0.0;
-          if (current.containsKey('snow')) precip += current['snow']['1h'] ?? 0.0;
+          
+          // Get precipitation correctly
+          final precip = _getPrecipitation(current);
+          
           final sunriseTime = DateFormat('HH:mm').format(
               DateTime.fromMillisecondsSinceEpoch(current['sys']['sunrise'] * 1000));
           final sunsetTime = DateFormat('HH:mm').format(
               DateTime.fromMillisecondsSinceEpoch(current['sys']['sunset'] * 1000));
           final displayCity = current['name'] ?? cityName;
+          
+          // Update city name when location is used
           if (cityName.isEmpty && displayCity.isNotEmpty) {
-            cityName = displayCity;
-            isFavorite = favorites.contains(cityName);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  cityName = displayCity;
+                  isFavorite = favorites.contains(displayCity);
+                });
+              }
+            });
           }
 
           final hourlyList = forecast['list'].take(5).toList();

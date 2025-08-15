@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 class HourlyForecast extends StatelessWidget {
@@ -19,12 +18,12 @@ class HourlyForecast extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Container(
-        width: 100,
+        width: 140,
         padding: const EdgeInsets.all(8.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(time, style: const TextStyle(fontSize: 16)),
+            Text(time, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Icon(icon, size: 32),
             const SizedBox(height: 8),
